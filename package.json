@@ -1,0 +1,11 @@
+{
+  "name": "pisec",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler d1 migrations apply pisec --local && wrangler dev",
+    "deploy": "wrangler d1 migrations apply pisec --remote && wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

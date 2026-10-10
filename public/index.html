@@ -90,7 +90,7 @@
   .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
 
   .tabs { display: flex; gap: 0; margin-bottom: 16px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-  .tabs button { flex: 1; border-radius: 0; background: var(--card); color: var(--fg); padding: 10px; }
+  .tabs button { flex: 1; border-radius: 0; background: var(--card); color: var(--fg); padding: 10px 4px; font-size: .9rem; white-space: nowrap; }
   .tabs button.on { background: var(--btn); color: var(--btn-fg); }
 
   .code {
@@ -155,6 +155,7 @@
     <div class="tabs">
       <button id="tabLocal" class="on">この端末で遊ぶ</button>
       <button id="tabOnline">オンライン対戦</button>
+      <button id="tabRanking">ランキング</button>
     </div>
 
     <!-- ローカル設定 -->
@@ -188,7 +189,22 @@
       <div class="msg" id="onlineMsg"></div>
     </div>
 
-    <div class="card">
+    <!-- 1人プレイの自己ベストランキング -->
+    <div class="card hidden" id="rankingCard">
+      <h2>1人プレイ 自己ベストランキング</h2>
+      <p class="hint" style="text-align:left;margin:0 0 8px">1人で遊んだときの記録が自動で登録されます（ぬるいモードを除く）。名前は「この端末で遊ぶ」で登録した名前です。</p>
+      <div class="msg" id="myRank"></div>
+      <table>
+        <thead><tr><th>順位</th><th>名前</th><th>記録（秒）</th><th>一致桁</th></tr></thead>
+        <tbody id="worldBody"></tbody>
+      </table>
+      <div class="msg" id="rankingMsg"></div>
+      <div class="actions">
+        <button class="ghost" id="reloadRanking">更新</button>
+      </div>
+    </div>
+
+    <div class="card" id="optionCard">
       <label class="opt"><input type="checkbox" id="showTimer"> 経過時間を表示する（ぬるいモード）</label>
     </div>
 
@@ -198,7 +214,8 @@
       <p>2. π秒（3.14159265…秒）経ったと思ったら、もう一度ボタンを押す。</p>
       <p>3. 小数点以下何桁までπと一致するかを調べる。</p>
       <p>4. 最も多くの桁が一致した人の勝ち。同じ桁数ならπとの差が小さい方が勝ち。</p>
-      <p>1人でも遊べます。スペースキー / Enter でもボタンを押せます。</p>
+      <p>1人でも遊べます。1人で遊んだ記録は「ランキング」に自己ベストとして登録されます。</p>
+      <p>スペースキー / Enter でもボタンを押せます。</p>
       <p>オンライン対戦では、計測は各自の端末で行うので通信の遅れは記録に影響しません。</p>
     </div>
   </section>
@@ -233,6 +250,7 @@
       <div class="digits" id="resultDigits"></div>
       <div class="digits pi-ref" id="piDigits"></div>
       <div class="score" id="resultScore"></div>
+      <div class="msg" id="soloRankMsg"></div>
       <div class="actions">
         <button id="nextBtn">次へ</button>
       </div>
@@ -375,6 +393,7 @@
     $("live").textContent = "";
     $("resultCard").classList.add("hidden");
     $("waitCard").classList.add("hidden");
+    $("soloRankMsg").textContent = "";
     show("play");
   }
 
@@ -433,11 +452,83 @@
   function setTab(m) {
     $("tabLocal").classList.toggle("on", m === "local");
     $("tabOnline").classList.toggle("on", m === "online");
+    $("tabRanking").classList.toggle("on", m === "ranking");
     $("localSetup").classList.toggle("hidden", m !== "local");
     $("onlineSetup").classList.toggle("hidden", m !== "online");
+    $("rankingCard").classList.toggle("hidden", m !== "ranking");
+    $("optionCard").classList.toggle("hidden", m === "ranking");
+    if (m === "ranking") loadRanking();
   }
   $("tabLocal").onclick = () => setTab("local");
   $("tabOnline").onclick = () => setTab("online");
+  $("tabRanking").onclick = () => setTab("ranking");
+
+  // ---------- 1人プレイの自己ベストランキング（Cloudflare Workers + D1） ----------
+
+  const API = "/api/scores";
+  // ブラウザごとの ID。自己ベストはこの ID ごとに 1 つ保存される
+  let playerId = store.get("piSec.playerId", "");
+  if (!/^[0-9a-f]{32}$/.test(playerId)) {
+    playerId = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+    store.set("piSec.playerId", playerId);
+  }
+
+  const fmtRec = (r) => `${r.sec.toFixed(DECIMALS)} 秒（${r.digits < 0 ? "×" : r.digits + " 桁"}）`;
+
+  async function loadRanking() {
+    $("rankingMsg").textContent = "読み込み中…";
+    $("rankingMsg").classList.remove("err");
+    try {
+      const res = await fetch(`${API}?limit=100&me=${playerId}`);
+      if (!res.ok) throw new Error(res.status);
+      const data = await res.json();
+      const body = $("worldBody");
+      body.innerHTML = "";
+      let r = 0;
+      data.scores.forEach((e, i) => {
+        const prev = data.scores[i - 1];
+        if (!prev || prev.digits !== e.digits || prev.sec !== e.sec) r = i + 1;
+        const tr = document.createElement("tr");
+        tr.className = [r === 1 ? "win" : "", e.me ? "me" : ""].join(" ").trim();
+        [r === 1 ? "👑 1" : String(r), e.name, e.sec.toFixed(DECIMALS), e.digits < 0 ? "×" : `${e.digits} 桁`]
+          .forEach((c, j) => {
+            const td = document.createElement("td");
+            td.textContent = c;
+            if (j === 2) td.className = "num";
+            tr.append(td);
+          });
+        body.append(tr);
+      });
+      $("myRank").textContent = data.me
+        ? `あなたの自己ベスト: ${fmtRec(data.me)} — ${data.total} 人中 ${data.me.rank} 位（${data.me.plays} 回プレイ）`
+        : "まだ記録がありません。1人で遊ぶと登録されます。";
+      $("rankingMsg").textContent = data.scores.length ? "" : "まだ誰も記録がありません。";
+    } catch {
+      $("rankingMsg").textContent = "ランキングを読み込めませんでした（ランキングはサーバー版でのみ使えます）。";
+      $("rankingMsg").classList.add("err");
+    }
+  }
+  $("reloadRanking").onclick = loadRanking;
+
+  async function submitSolo(name, sec) {
+    const msg = $("soloRankMsg");
+    msg.classList.remove("err");
+    if ($("showTimer").checked) { msg.textContent = "ぬるいモードの記録はランキングに登録されません"; return; }
+    msg.textContent = "ランキングに登録中…";
+    try {
+      const res = await fetch(API, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ playerId, name, sec }),
+      });
+      if (!res.ok) throw new Error(res.status);
+      const { isBest, total, me } = await res.json();
+      msg.textContent = (isBest ? "🎉 自己ベスト更新！ " : `自己ベスト: ${fmtRec(me)} — `) + `ランキング ${total} 人中 ${me.rank} 位`;
+    } catch {
+      msg.textContent = "ランキングに登録できませんでした";
+      msg.classList.add("err");
+    }
+  }
 
   // ---------- ローカル対戦 ----------
 
@@ -484,6 +575,7 @@
     const title = players.length > 1 ? `${players[turn]} の番（${turn + 1}/${players.length}）` : players[turn];
     beginMeasure(title, (sec) => {
       localResults.push({ name: players[turn], sec });
+      if (players.length === 1) submitSolo(players[0] === "あなた" ? "名無し" : players[0], sec);
       $("nextBtn").classList.remove("hidden");
       $("nextBtn").textContent = turn + 1 < players.length ? "次の人へ" : "結果発表";
     });
