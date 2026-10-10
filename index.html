@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>π秒見積もり</title>
+<style>
+  :root {
+    --bg: #faf7f0;
+    --fg: #222;
+    --muted: #777;
+    --card: #fff;
+    --line: #e2ddd0;
+    --accent: #c0392b;
+    --hit: #1e8449;
+    --hit-bg: #d5f5e3;
+    --miss: #c0392b;
+    --miss-bg: #fadbd8;
+    --btn: #2c3e50;
+    --btn-fg: #fff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16161a;
+      --fg: #eee;
+      --muted: #999;
+      --card: #222228;
+      --line: #3a3a44;
+      --accent: #ff6b5b;
+      --hit: #58d68d;
+      --hit-bg: #1d3a2a;
+      --miss: #ff6b5b;
+      --miss-bg: #432222;
+      --btn: #e8e8e8;
+      --btn-fg: #16161a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    line-height: 1.6;
+  }
+  main { max-width: 640px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { margin: 0 0 4px; font-size: 2rem; }
+  h1 .pi { color: var(--accent); }
+  .sub { color: var(--muted); margin: 0 0 24px; font-size: .9rem; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  h2 { font-size: 1.1rem; margin: 0 0 12px; }
+  button {
+    font: inherit;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 14px;
+    background: var(--btn);
+    color: var(--btn-fg);
+    cursor: pointer;
+  }
+  button.ghost { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+  button:disabled { opacity: .4; cursor: default; }
+  input[type=text] {
+    font: inherit;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--fg);
+    flex: 1;
+    min-width: 0;
+  }
+  .row { display: flex; gap: 8px; align-items: center; }
+  ul.players { list-style: none; padding: 0; margin: 12px 0 0; }
+  ul.players li {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 0; border-bottom: 1px dashed var(--line);
+  }
+  ul.players li:last-child { border-bottom: none; }
+  label.opt { display: flex; gap: 8px; align-items: center; margin-top: 8px; font-size: .95rem; }
+  .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
+
+  #big {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    max-height: 60vh;
+    border-radius: 50%;
+    font-size: clamp(1.6rem, 8vw, 3rem);
+    font-weight: bold;
+    margin: 16px auto;
+    display: block;
+    max-width: 320px;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #big.running { background: var(--accent); color: #fff; }
+  .turn-name { text-align: center; font-size: 1.4rem; font-weight: bold; }
+  .hint { text-align: center; color: var(--muted); font-size: .9rem; }
+  .live { text-align: center; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 1.4rem; min-height: 2em; }
+
+  .digits {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: clamp(1.1rem, 5vw, 1.6rem);
+    letter-spacing: .05em;
+    word-break: break-all;
+  }
+  .digits span { padding: 0 1px; border-radius: 3px; }
+  .digits .h { color: var(--hit); background: var(--hit-bg); }
+  .digits .m { color: var(--miss); background: var(--miss-bg); font-weight: bold; }
+  .digits .r { color: var(--muted); }
+  .pi-ref { color: var(--muted); }
+  .score { font-size: 1.2rem; margin-top: 8px; }
+  .score b { font-size: 1.8rem; color: var(--accent); }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 8px 4px; border-bottom: 1px solid var(--line); text-align: left; }
+  td.num { font-family: ui-monospace, Menlo, Consolas, monospace; }
+  tr.win td { font-weight: bold; }
+  .crown { color: #d4ac0d; }
+  .rules { font-size: .9rem; color: var(--muted); }
+  .rules p { margin: 4px 0; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1><span class="pi">π</span>秒見積もり</h1>
+  <p class="sub">稲刈り遠征中に思いついたクソゲー</p>
+
+  <!-- 設定画面 -->
+  <section id="setup">
+    <div class="card">
+      <h2>プレイヤー</h2>
+      <form id="addForm" class="row">
+        <input id="nameInput" type="text" placeholder="名前を入力" maxlength="20" autocomplete="off">
+        <button type="submit">追加</button>
+      </form>
+      <ul id="playerList" class="players"></ul>
+      <label class="opt"><input type="checkbox" id="showTimer"> 経過時間を表示する（ぬるいモード）</label>
+      <div class="actions">
+        <button id="startGame">ゲーム開始</button>
+      </div>
+    </div>
+    <div class="card rules">
+      <h2 style="color:var(--fg)">ルール</h2>
+      <p>1. 自分の番になったらボタンを押してタイマー開始。</p>
+      <p>2. π秒（3.14159265…秒）経ったと思ったら、もう一度ボタンを押す。</p>
+      <p>3. 小数点以下何桁までπと一致するかを調べる。</p>
+      <p>4. 最も多くの桁が一致した人の勝ち。同じ桁数ならπとの差が小さい方が勝ち。</p>
+      <p>1人でも遊べます。スペースキー / Enter でもボタンを押せます。</p>
+    </div>
+  </section>
+
+  <!-- プレイ画面 -->
+  <section id="play" class="hidden">
+    <div class="card">
+      <div class="turn-name" id="turnName"></div>
+      <div class="hint" id="turnHint"></div>
+      <button id="big">スタート</button>
+      <div class="live" id="live"></div>
+    </div>
+    <div class="card hidden" id="resultCard">
+      <div class="digits" id="resultDigits"></div>
+      <div class="digits pi-ref" id="piDigits"></div>
+      <div class="score" id="resultScore"></div>
+      <div class="actions">
+        <button id="nextBtn">次へ</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 結果画面 -->
+  <section id="final" class="hidden">
+    <div class="card">
+      <h2>結果発表</h2>
+      <table>
+        <thead><tr><th>順位</th><th>名前</th><th>記録（秒）</th><th>一致桁</th></tr></thead>
+        <tbody id="rankBody"></tbody>
+      </table>
+      <div class="actions">
+        <button class="ghost" id="toSetup">メンバー変更</button>
+        <button id="again">もう一回</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+  // πの小数点以下（表示・比較用）
+  const PI_STR = "3.14159265358979323846";
+  // 表示する小数点以下の桁数（performance.now() はμs程度まで返す。実際の精度はブラウザ依存）
+  const DECIMALS = 6;
+
+  const $ = (id) => document.getElementById(id);
+  const sections = { setup: $("setup"), play: $("play"), final: $("final") };
+  const show = (name) => {
+    for (const k in sections) sections[k].classList.toggle("hidden", k !== name);
+  };
+
+  let players = loadPlayers();
+  let results = [];
+  let turn = 0;
+  let state = "idle"; // idle | running | done
+  let t0 = 0;
+  let rafId = 0;
+
+  function loadPlayers() {
+    try {
+      const v = JSON.parse(localStorage.getItem("piSec.players") || "[]");
+      return Array.isArray(v) ? v.filter((s) => typeof s === "string") : [];
+    } catch { return []; }
+  }
+  function savePlayers() {
+    try { localStorage.setItem("piSec.players", JSON.stringify(players)); } catch {}
+  }
+
+  function renderPlayers() {
+    const ul = $("playerList");
+    ul.innerHTML = "";
+    players.forEach((p, i) => {
+      const li = document.createElement("li");
+      const span = document.createElement("span");
+      span.textContent = p;
+      const del = document.createElement("button");
+      del.className = "ghost";
+      del.textContent = "削除";
+      del.onclick = () => { players.splice(i, 1); savePlayers(); renderPlayers(); };
+      li.append(span, del);
+      ul.append(li);
+    });
+    $("startGame").textContent = players.length ? "ゲーム開始" : "1人で遊ぶ";
+  }
+
+  $("addForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = $("nameInput").value.trim();
+    if (!name) return;
+    players.push(name);
+    $("nameInput").value = "";
+    savePlayers();
+    renderPlayers();
+  });
+
+  $("startGame").onclick = () => {
+    if (!players.length) players = ["あなた"];
+    results = [];
+    turn = 0;
+    show("play");
+    beginTurn();
+  };
+  $("again").onclick = $("startGame").onclick;
+  $("toSetup").onclick = () => { show("setup"); renderPlayers(); };
+
+  function beginTurn() {
+    state = "idle";
+    $("turnName").textContent = players.length > 1
+      ? `${players[turn]} の番（${turn + 1}/${players.length}）`
+      : players[turn];
+    $("turnHint").textContent = "ボタンを押してスタート → π秒後にもう一度押す";
+    $("big").textContent = "スタート";
+    $("big").classList.remove("running");
+    $("big").disabled = false;
+    $("live").textContent = "";
+    $("resultCard").classList.add("hidden");
+  }
+
+  // 押した瞬間を記録するため pointerdown / keydown を使う
+  function press(ts) {
+    if (state === "idle") {
+      t0 = ts;
+      state = "running";
+      $("big").textContent = "ストップ";
+      $("big").classList.add("running");
+      $("turnHint").textContent = "π秒経ったと思ったら押す";
+      if ($("showTimer").checked) tick();
+      else $("live").textContent = "計測中…";
+    } else if (state === "running") {
+      const sec = (ts - t0) / 1000;
+      state = "done";
+      cancelAnimationFrame(rafId);
+      $("big").textContent = "計測終了";
+      $("big").classList.remove("running");
+      $("big").disabled = true;
+      $("live").textContent = "";
+      finishTurn(sec);
+    }
+  }
+
+  function tick() {
+    $("live").textContent = ((performance.now() - t0) / 1000).toFixed(2) + " 秒";
+    rafId = requestAnimationFrame(tick);
+  }
+
+  $("big").addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    press(performance.now());
+  });
+  document.addEventListener("keydown", (e) => {
+    if (sections.play.classList.contains("hidden")) return;
+    if (e.code !== "Space" && e.code !== "Enter") return;
+    if (e.repeat) return;
+    e.preventDefault();
+    if (state === "done") {
+      if (!$("resultCard").classList.contains("hidden")) $("nextBtn").click();
+      return;
+    }
+    press(performance.now());
+  });
+
+  // 小数点以下何桁 π と一致するか。整数部が 3 でなければ -1。
+  function matchDigits(str) {
+    const [ip, fp = ""] = str.split(".");
+    if (ip !== "3") return -1;
+    const piFrac = PI_STR.split(".")[1];
+    let n = 0;
+    while (n < fp.length && fp[n] === piFrac[n]) n++;
+    return n;
+  }
+
+  function finishTurn(sec) {
+    const str = sec.toFixed(DECIMALS);
+    const digits = matchDigits(str);
+    const diff = Math.abs(sec - Math.PI);
+    results.push({ name: players[turn], sec, str, digits, diff });
+
+    // 一致部分を色分けして表示
+    const box = $("resultDigits");
+    box.innerHTML = "";
+    const add = (text, cls) => {
+      const s = document.createElement("span");
+      s.textContent = text;
+      if (cls) s.className = cls;
+      box.append(s);
+    };
+    const dot = str.indexOf(".");
+    if (digits < 0) {
+      add(str.slice(0, dot), "m");
+      add(str.slice(dot), "r");
+    } else {
+      add(str.slice(0, dot + 1 + digits), "h");
+      if (dot + 1 + digits < str.length) {
+        add(str[dot + 1 + digits], "m");
+        add(str.slice(dot + 2 + digits), "r");
+      }
+    }
+    add(" 秒");
+    $("piDigits").textContent = PI_STR.slice(0, str.length) + "… (π)";
+
+    let msg;
+    if (digits < 0) msg = sec < 3 ? "整数部からズレてます（早すぎ）" : "整数部からズレてます（遅すぎ）";
+    else if (digits === 0) msg = "3 は合ってる";
+    else msg = `小数点以下 <b>${digits}</b> 桁一致！`;
+    $("resultScore").innerHTML = msg + `<div class="hint" style="text-align:left">πとの差: ${diff.toFixed(DECIMALS)} 秒</div>`;
+
+    $("nextBtn").textContent = turn + 1 < players.length ? "次の人へ" : "結果発表";
+    $("resultCard").classList.remove("hidden");
+  }
+
+  $("nextBtn").onclick = () => {
+    turn++;
+    if (turn < players.length) beginTurn();
+    else showFinal();
+  };
+
+  function showFinal() {
+    const sorted = [...results].sort((a, b) => b.digits - a.digits || a.diff - b.diff);
+    const body = $("rankBody");
+    body.innerHTML = "";
+    let rank = 0;
+    sorted.forEach((r, i) => {
+      const prev = sorted[i - 1];
+      if (!prev || prev.digits !== r.digits || prev.diff !== r.diff) rank = i + 1;
+      const tr = document.createElement("tr");
+      if (rank === 1) tr.className = "win";
+      const cells = [
+        rank === 1 ? "👑 1" : String(rank),
+        r.name,
+        r.str,
+        r.digits < 0 ? "×" : `${r.digits} 桁`,
+      ];
+      cells.forEach((c, j) => {
+        const td = document.createElement("td");
+        td.textContent = c;
+        if (j === 2) td.className = "num";
+        tr.append(td);
+      });
+      body.append(tr);
+    });
+    show("final");
+  }
+
+  renderPlayers();
+})();
+</script>
+</body>
+</html>
