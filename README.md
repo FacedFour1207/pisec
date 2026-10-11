@@ -5,6 +5,8 @@
 ボタンを押して、**ちょうどπ秒（3.14159265…秒）** だと思ったらもう一度押す。
 小数点以下何桁までπと一致したかを競う、それだけのゲームです。
 
+**▶ 遊ぶ: https://pisec.siesnet.com/**
+
 - 必要人数：2人以上推奨、1人でも可
 - 必要なもの：ブラウザ（スマホでもPCでも）
 
@@ -73,6 +75,10 @@ npm run deploy                    # テーブル作成（migrations）+ デプ�
 `https://pisec.<あなたのサブドメイン>.workers.dev` で公開されます。2回目以降は `npm run deploy` だけで更新できます。
 
 GitHub への push で自動デプロイしたい場合は、Cloudflare ダッシュボードの Workers & Pages → 作成 →「リポジトリをインポート」でこのリポジトリをつなぎ、デプロイコマンドを `npm run deploy` にしてください。
+
+## お問い合わせ
+
+support@siesnet.com
 
 ## ライセンス
 
