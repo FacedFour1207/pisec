@@ -58,8 +58,8 @@ wrangler.toml                Workers / D1 の設定
 ### ローカルで動かす
 
 ```sh
-git clone https://github.com/FacedFour1207/game1.git
-cd game1
+git clone https://github.com/FacedFour1207/pisec.git
+cd pisec
 npm install
 npm run dev                       # http://localhost:8787
 ```
